@@ -1,0 +1,9 @@
+bin/
+obj/
+.vs/
+*.user
+logs/
+.idea/
+
+# Segredos gerados pelos scripts de infraestrutura
+infra/.segredos.env

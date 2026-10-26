@@ -1,0 +1,33 @@
+# Execução local (desenvolvimento): API + MongoDB
+#   docker compose up --build
+# API:     http://localhost:8080   (Swagger na raiz)
+# MongoDB: localhost:27017
+services:
+  mongo:
+    image: mongo:7
+    container_name: mongo-fiapnext
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: fiapnext
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-fiapnext123}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api-fiapnext
+    depends_on:
+      - mongo
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      MongoDb__ConnectionString: mongodb://fiapnext:${MONGO_PASSWORD:-fiapnext123}@mongo:27017/?authSource=admin
+      MongoDb__DatabaseName: FiapNextDb
+      Jwt__SecretKey: ${JWT_SECRET:-FiapNext_SuperSecretKey_2TDS_2026_Minimum32CharsLong!}
+    ports:
+      - "8080:8080"
+
+volumes:
+  mongo-data:

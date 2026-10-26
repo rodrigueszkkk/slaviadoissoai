@@ -1,0 +1,9 @@
+{
+  "titulo": "Pipeline CI/CD FIAP NEXT - Atualizado",
+  "descricao": "Trabalho atualizado via PUT para demonstrar o U do CRUD no banco em nuvem.",
+  "categoria": "DevOps",
+  "linkRepositorio": "https://dev.azure.com/organizacao/projeto/_git/repositorio",
+  "linkPitch": "https://youtube.com/watch?v=pitch_devops",
+  "nota": 9.5,
+  "relevancia": 90
+}

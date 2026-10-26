@@ -1,0 +1,164 @@
+# =====================================================================
+# FIAP NEXT API (.NET + MongoDB) - Pipeline CI/CD no Azure DevOps
+#
+#  Stage 1 - CI : restore, build, TESTES UNITÁRIOS (publicados na aba Tests),
+#                 publish e publicação do artefato (pacote .zip)
+#  Stage 2 - CD : consome o artefato do CI e faz o deploy no Azure App Service
+#                 (criado previamente pelos scripts da pasta infra/)
+#
+# Disparo automático a cada commit/merge na branch main.
+# Também pode ser executada manualmente (Run pipeline).
+#
+# VARIÁVEIS (Pipelines > Edit > Variables) - marcar o cadeado nas SECRETAS:
+#   NOME_WEBAPP                 fiapnext-api-561760
+#   ASPNETCORE_ENVIRONMENT      Production
+#   MONGO_DATABASE              FiapNextDb
+#   MONGO_CONNECTION  (secret)  mongodb://fiapnext:<senha>@<fqdn-do-aci>:27017/?authSource=admin
+#   JWT_SECRET        (secret)  chave com no mínimo 32 caracteres
+# =====================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  buildConfiguration: 'Release'
+  azureSubscription: 'MyAzureSubscription'      # nome da Service Connection (Azure Resource Manager)
+  apiProject: 'FiapNext.Api/FiapNext.Api.csproj'
+  testProject: 'FiapNext.Tests.Unit/FiapNext.Tests.Unit.csproj'
+  artifactName: 'app'
+
+stages:
+
+# =========================================================
+# 1. CI - BUILD E TESTES
+# =========================================================
+- stage: CI
+  displayName: 'CI - Build e Testes'
+  jobs:
+    - job: BuildTest
+      displayName: 'Build and Test'
+      pool:
+        vmImage: 'ubuntu-latest'
+
+      steps:
+        - checkout: self
+
+        - task: UseDotNet@2
+          displayName: 'Instalar .NET SDK 10'
+          inputs:
+            packageType: 'sdk'
+            version: '10.0.x'
+
+        - task: DotNetCoreCLI@2
+          displayName: 'Restaurar dependências'
+          inputs:
+            command: 'restore'
+            projects: '$(apiProject)'
+
+        - task: DotNetCoreCLI@2
+          displayName: 'Build da API'
+          inputs:
+            command: 'build'
+            projects: '$(apiProject)'
+            arguments: '--configuration $(buildConfiguration) --no-restore'
+
+        # Testes unitários (xUnit): o resultado é publicado automaticamente na aba "Tests" da execução
+        - task: DotNetCoreCLI@2
+          displayName: 'Testes Unitários (CRUD de Grupos e Trabalhos)'
+          inputs:
+            command: 'test'
+            projects: '$(testProject)'
+            arguments: '--configuration $(buildConfiguration)'
+            publishTestResults: true
+            testRunTitle: 'Testes Unitarios FiapNext'
+
+        - task: DotNetCoreCLI@2
+          displayName: 'Publicar API'
+          inputs:
+            command: 'publish'
+            publishWebProjects: false
+            projects: '$(apiProject)'
+            arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/publish'
+            zipAfterPublish: false
+            modifyOutputPath: false
+
+        - task: ArchiveFiles@2
+          displayName: 'Compactar aplicação'
+          inputs:
+            rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/publish'
+            includeRootFolder: false
+            archiveType: 'zip'
+            archiveFile: '$(Build.ArtifactStagingDirectory)/$(artifactName).zip'
+            replaceExistingArchive: true
+
+        - task: PublishPipelineArtifact@1
+          displayName: 'Publicar artefato'
+          inputs:
+            targetPath: '$(Build.ArtifactStagingDirectory)/$(artifactName).zip'
+            artifact: '$(artifactName)'
+            publishLocation: 'pipeline'
+
+# =========================================================
+# 2. CD - DEPLOY NO AZURE APP SERVICE (RELEASE)
+# =========================================================
+- stage: CD
+  displayName: 'CD - Release no App Service'
+  dependsOn: CI
+  condition: succeeded()
+
+  jobs:
+    - job: DeployWebApp
+      displayName: 'Deploy da API'
+      pool:
+        vmImage: 'ubuntu-latest'
+
+      steps:
+        - checkout: none
+
+        - task: DownloadPipelineArtifact@2
+          displayName: 'Baixar artefato do CI'
+          inputs:
+            buildType: 'current'
+            artifactName: '$(artifactName)'
+            targetPath: '$(Pipeline.Workspace)/$(artifactName)'
+
+        # Variáveis de ambiente da aplicação (segredos vêm das variáveis secretas da Pipeline)
+        - task: AzureAppServiceSettings@1
+          displayName: 'Configurar variáveis de ambiente do App Service'
+          inputs:
+            azureSubscription: '$(azureSubscription)'
+            appName: '$(NOME_WEBAPP)'
+            appSettings: |
+              [
+                {
+                  "name": "ASPNETCORE_ENVIRONMENT",
+                  "value": "$(ASPNETCORE_ENVIRONMENT)",
+                  "slotSetting": false
+                },
+                {
+                  "name": "MongoDb__ConnectionString",
+                  "value": "$(MONGO_CONNECTION)",
+                  "slotSetting": false
+                },
+                {
+                  "name": "MongoDb__DatabaseName",
+                  "value": "$(MONGO_DATABASE)",
+                  "slotSetting": false
+                },
+                {
+                  "name": "Jwt__SecretKey",
+                  "value": "$(JWT_SECRET)",
+                  "slotSetting": false
+                }
+              ]
+
+        - task: AzureWebApp@1
+          displayName: 'Deploy da API no App Service'
+          inputs:
+            azureSubscription: '$(azureSubscription)'
+            appType: 'webAppLinux'
+            appName: '$(NOME_WEBAPP)'
+            package: '$(Pipeline.Workspace)/$(artifactName)/$(artifactName).zip'
+            deploymentMethod: 'zipDeploy'
