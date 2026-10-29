@@ -23,10 +23,12 @@ case "$1" in
       --exec-command "/bin/bash -c \"echo $SQL_B64 | base64 -d > /tmp/script.js && mongosh $AUTH /tmp/script.js\""
     ;;
   consultar)
+    # Consulta em base64 (evita problemas de aspas no --exec-command)
+    JS_B64=$(printf '%s' 'print("--- Grupos ---"); printjson(db.Grupos.find().toArray()); print("--- Trabalhos ---"); printjson(db.Trabalhos.find().toArray()); print("--- Users ---"); printjson(db.Users.find({}, {senha:0}).toArray())' | base64 -w0)
     az container exec \
       --resource-group "$RESOURCE_GROUP_NAME" \
       --name "$MONGO_ACI_NAME" \
-      --exec-command "mongosh $AUTH $MONGO_DB --eval \"printjson(db.Grupos.find().toArray()); printjson(db.Trabalhos.find().toArray()); printjson(db.Users.find({}, {senha:0}).toArray())\""
+      --exec-command "/bin/bash -c \"echo $JS_B64 | base64 -d > /tmp/consulta.js && mongosh $AUTH $MONGO_DB /tmp/consulta.js\""
     ;;
   *)
     echo "Uso: $0 [aplicar|consultar]"

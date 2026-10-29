@@ -1,0 +1,103 @@
+# =====================================================================
+# FIAP NEXT API (.NET + MongoDB) - CI/CD com GitHub Actions
+#
+#  Job 1 - CI : restore, build, TESTES UNITÁRIOS, publish e artefato
+#  Job 2 - CD : baixa o artefato do CI e faz o deploy no Azure App Service
+#               (criado previamente pelos scripts da pasta infra/)
+#
+# Disparo: push na main (CI + CD), pull request para a main (só CI)
+#          e manual (Actions > Run workflow).
+#
+# SECRET (Settings > Secrets and variables > Actions):
+#   AZURE_WEBAPP_PUBLISH_PROFILE  conteúdo do publish profile do Web App
+#
+# As variáveis da aplicação (MongoDb__ConnectionString, Jwt__SecretKey...)
+# ficam nas App Settings do Web App, configuradas pelos scripts de infra.
+# =====================================================================
+name: CI/CD - FiapNext API
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  BUILD_CONFIGURATION: 'Release'
+  API_PROJECT: 'FiapNext.Api/FiapNext.Api.csproj'
+  TEST_PROJECT: 'FiapNext.Tests.Unit/FiapNext.Tests.Unit.csproj'
+  AZURE_WEBAPP_NAME: 'fiapnext-api-561760'
+  ARTIFACT_NAME: 'app'
+
+jobs:
+
+  # =========================================================
+  # 1. CI - BUILD E TESTES
+  # =========================================================
+  ci:
+    name: CI - Build e Testes
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Instalar .NET SDK 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restaurar dependências
+        run: dotnet restore ${{ env.API_PROJECT }}
+
+      - name: Build da API
+        run: dotnet build ${{ env.API_PROJECT }} --configuration ${{ env.BUILD_CONFIGURATION }} --no-restore
+
+      # Testes unitários (xUnit): resultado em .trx publicado como artefato
+      - name: Testes Unitários (CRUD de Grupos e Trabalhos)
+        run: dotnet test ${{ env.TEST_PROJECT }} --configuration ${{ env.BUILD_CONFIGURATION }} --logger "trx;LogFileName=resultado-testes.trx" --logger "console;verbosity=normal" --results-directory TestResults
+
+      - name: Publicar resultado dos testes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultado-testes
+          path: TestResults
+
+      - name: Publicar API
+        run: dotnet publish ${{ env.API_PROJECT }} --configuration ${{ env.BUILD_CONFIGURATION }} --output publish
+
+      - name: Publicar artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: publish
+
+  # =========================================================
+  # 2. CD - DEPLOY NO AZURE APP SERVICE
+  # =========================================================
+  cd:
+    name: CD - Release no App Service
+    needs: ci
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.webapp-url }}
+
+    steps:
+      - name: Baixar artefato do CI
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: app
+
+      - name: Deploy da API no App Service
+        id: deploy
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: app
