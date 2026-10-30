@@ -43,7 +43,9 @@ public static class MongoMappings
             {
                 BsonClassMap.RegisterClassMap<Grupo>(cm =>
                 {
-                    cm.AutoMap();
+                    // Mapeamento explícito (sem AutoMap): o AutoMap registrava os construtores
+                    // públicos como creator maps e a serialização falhava (500 no POST)
+                    cm.SetIgnoreExtraElements(true);
                     cm.MapIdProperty(g => g.Id)
                       .SetIdGenerator(GuidGenerator.Instance)
                       .SetSerializer(new GuidSerializer(BsonType.String));
@@ -58,7 +60,9 @@ public static class MongoMappings
             {
                 BsonClassMap.RegisterClassMap<Trabalho>(cm =>
                 {
-                    cm.AutoMap();
+                    // Mapeamento explícito (sem AutoMap): o AutoMap registrava os construtores
+                    // públicos como creator maps e a serialização falhava (500 no POST)
+                    cm.SetIgnoreExtraElements(true);
                     cm.MapIdProperty(t => t.Id)
                       .SetIdGenerator(GuidGenerator.Instance)
                       .SetSerializer(new GuidSerializer(BsonType.String));
@@ -85,7 +89,9 @@ public static class MongoMappings
             {
                 BsonClassMap.RegisterClassMap<User>(cm =>
                 {
-                    cm.AutoMap();
+                    // Mapeamento explícito (sem AutoMap): o AutoMap registrava os construtores
+                    // públicos como creator maps e a serialização falhava (500 no POST)
+                    cm.SetIgnoreExtraElements(true);
                     cm.MapIdProperty(u => u.Id)
                       .SetIdGenerator(GuidGenerator.Instance)
                       .SetSerializer(new GuidSerializer(BsonType.String));
